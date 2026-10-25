@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Red Flag - 글로벌 로맨스 스캠 경보 지도</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js & Globe.gl CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/globe.gl"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts (Inter & Pretendard fallback) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cyberDark: '#080811',
+            panelBg: 'rgba(15, 17, 28, 0.85)',
+            flagRed: '#ff2d55',
+            flagRedHover: '#ff446a',
+            neonGlow: 'rgba(255, 45, 85, 0.45)'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #05050b;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #globeViz {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Custom Glassmorphism UI */
+    .glass-panel {
+      background: rgba(14, 18, 32, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 45, 85, 0.22);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 45, 85, 0.12);
+    }
+
+    .pulse-marker {
+      box-shadow: 0 0 15px #ff2d55, 0 0 30px #ff2d55;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 45, 85, 0.4);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 45, 85, 0.8);
+    }
+  </style>
+</head>
+<body class="text-slate-100 font-sans relative w-full h-full">
+
+  <!-- 3D Globe Container -->
+  <div id="globeViz"></div>
+
+  <!-- Header & Navigation Bar -->
+  <header class="absolute top-4 left-4 right-4 z-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pointer-events-none">
+    <div class="glass-panel px-5 py-3 rounded-2xl flex items-center gap-3 pointer-events-auto border-l-4 border-l-flagRed">
+      <div class="relative flex items-center justify-center">
+        <i class="fa-solid fa-flag text-flagRed text-xl"></i>
+        <span class="absolute -top-1 -right-1 flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-flagRed opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-flagRed"></span>
+        </span>
+      </div>
+      <div>
+        <h1 class="text-lg font-extrabold tracking-wider text-white flex items-center gap-2">
+          RED FLAG <span class="text-[10px] px-2 py-0.5 rounded-full bg-red-950/80 border border-red-500/40 text-red-300">RADAR</span>
+        </h1>
+        <p class="text-xs text-slate-400">글로벌 로맨스 스캠 의심 프로필 레이더</p>
+      </div>
+    </div>
+
+    <!-- Search & Filter + Action Button -->
+    <div class="flex flex-wrap items-center gap-2.5 pointer-events-auto w-full md:w-auto">
+      <div class="glass-panel rounded-2xl px-3 py-1.5 flex items-center gap-2 flex-1 md:w-72">
+        <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm"></i>
+        <input 
+          id="searchInput" 
+          type="text" 
+          placeholder="도시, 별칭, 데이팅 앱 검색..." 
+          class="bg-transparent border-none text-xs text-white placeholder-slate-400 focus:outline-none w-full"
+        />
+        <button id="clearSearchBtn" class="text-slate-400 hover:text-white hidden text-xs">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <button 
+        id="openReportModalBtn" 
+        class="bg-flagRed hover:bg-flagRedHover text-white text-xs font-semibold px-4 py-2.5 rounded-2xl transition duration-200 flex items-center gap-2 shadow-lg shadow-flagRed/30 active:scale-95"
+      >
+        <i class="fa-solid fa-plus-circle text-sm"></i>
+        <span>신고 / 제보하기</span>
+      </button>
+
+      <button 
+        id="resetViewBtn" 
+        class="glass-panel text-slate-300 hover:text-white text-xs px-3 py-2.5 rounded-2xl transition active:scale-95"
+        title="시점 초기화"
+      >
+        <i class="fa-solid fa-rotate-right"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Left Stats & Guidelines Quick Card -->
+  <aside class="hidden md:flex flex-col gap-2 absolute top-24 left-4 z-20 pointer-events-none w-64">
+    <div class="glass-panel p-4 rounded-2xl pointer-events-auto space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-300">모니터링 경보 현황</span>
+        <span id="totalAlertsCount" class="text-xs font-bold text-flagRed bg-red-950/60 px-2 py-0.5 rounded border border-red-500/30">0건</span>
+      </div>
+      <div class="h-1 bg-slate-800 rounded-full overflow-hidden">
+        <div class="bg-gradient-to-r from-orange-500 via-flagRed to-pink-500 h-full w-4/5 animate-pulse"></div>
+      </div>
+      <p class="text-[11px] text-slate-400 leading-relaxed">
+        <i class="fa-solid fa-shield-halved text-emerald-400 mr-1"></i>
+        <strong>법적 가이드</strong>: 실명/사진 대신 가상 별칭과 수법 위주로 작성하여 무고한 피해 및 명예훼손을 예방합니다.
+      </p>
+    </div>
+
+    <!-- Active List Snippet -->
+    <div class="glass-panel p-3 rounded-2xl pointer-events-auto max-h-64 overflow-y-auto space-y-2">
+      <p class="text-[11px] font-bold text-slate-300 px-1 uppercase tracking-wider">최근 보고된 프로필</p>
+      <div id="miniAlertsList" class="space-y-1.5">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </aside>
+
+  <!-- Profile Detail Drawer / Modal (Slide-over on Right) -->
+  <div 
+    id="profileDrawer" 
+    class="fixed right-0 top-0 bottom-0 w-full sm:w-[440px] z-30 transform translate-x-full transition-transform duration-300 ease-in-out glass-panel !border-r-0 !rounded-none sm:!rounded-l-3xl p-6 flex flex-col justify-between shadow-2xl overflow-y-auto"
+  >
+    <div class="space-y-5">
+      <!-- Drawer Header -->
+      <div class="flex items-start justify-between border-b border-slate-700/50 pb-4">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-flagRed/20 text-flagRed border border-flagRed/40 flex items-center gap-1">
+              <i class="fa-solid fa-triangle-exclamation"></i> 경보 발령
+            </span>
+            <span id="drawerRiskBadge" class="text-[10px] font-semibold text-orange-400 bg-orange-950/50 px-2 py-0.5 rounded border border-orange-500/30">
+              위험도: 높음
+            </span>
+          </div>
+          <h2 id="drawerAlias" class="text-xl font-extrabold text-white tracking-tight">별칭 불러오는 중...</h2>
+          <p id="drawerCityCountry" class="text-xs text-slate-400 flex items-center gap-1 mt-1">
+            <i class="fa-solid fa-location-dot text-flagRed"></i> <span>서울, 대한민국</span>
+          </p>
+        </div>
+        <button id="closeDrawerBtn" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/5 transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Quick Meta Badges -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="bg-black/30 p-2.5 rounded-xl border border-white/5">
+          <span class="text-[10px] uppercase text-slate-400 block mb-0.5">자주 출몰하는 앱</span>
+          <span id="drawerApps" class="text-xs font-semibold text-slate-200">Tinder, Bumble</span>
+        </div>
+        <div class="bg-black/30 p-2.5 rounded-xl border border-white/5">
+          <span class="text-[10px] uppercase text-slate-400 block mb-0.5">자칭 직업 / 신분</span>
+          <span id="drawerJob" class="text-xs font-semibold text-slate-200">해외 자산운용 매니저</span>
+        </div>
+      </div>
+
+      <!-- Modus Operandi Details -->
+      <div class="space-y-2">
+        <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+          <i class="fa-solid fa-fingerprint text-flagRed"></i> 수법 및 주요 페르소나 특징
+        </h3>
+        <div class="bg-black/40 p-3.5 rounded-xl border border-white/5 text-xs text-slate-300 leading-relaxed space-y-2">
+          <p id="drawerDesc">상세 사기 수법이 여기에 표시됩니다.</p>
+        </div>
+      </div>
+
+      <!-- Indicators / Common Warning Tags -->
+      <div>
+        <h4 class="text-[11px] font-semibold text-slate-400 mb-2">포착된 전형적 사기 패턴</h4>
+        <div id="drawerPatternTags" class="flex flex-wrap gap-1.5">
+          <!-- Tags injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Actions: Upvote / Same Person Guess -->
+    <div class="pt-6 mt-6 border-t border-slate-700/50 space-y-3">
+      <div class="bg-red-950/30 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
+        <div class="text-left">
+          <p class="text-xs font-bold text-white flex items-center gap-1.5">
+            <i class="fa-solid fa-user-secret text-flagRed"></i> 동일 인물 의심 투표
+          </p>
+          <p class="text-[10px] text-slate-400">동일한 화법이나 수법을 경험하셨다면 공감해 주세요.</p>
+        </div>
+        <span id="upvoteCountBadge" class="text-sm font-extrabold text-flagRed px-2.5 py-1 rounded-lg bg-black/50 border border-flagRed/30">
+          0
+        </span>
+      </div>
+
+      <div class="flex gap-2">
+        <button 
+          id="upvoteBtn" 
+          class="flex-1 bg-gradient-to-r from-flagRed to-pink-600 hover:from-flagRedHover hover:to-pink-500 text-white font-bold py-3 rounded-xl transition duration-200 shadow-lg shadow-flagRed/25 flex items-center justify-center gap-2 active:scale-95 text-xs"
+        >
+          <i class="fa-solid fa-heart-pulse"></i>
+          <span>동일 인물 가능성 공감하기</span>
+        </button>
+        <button 
+          id="shareBtn" 
+          class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-3 rounded-xl transition active:scale-95 text-xs" 
+          title="공유 링크 복사"
+        >
+          <i class="fa-solid fa-share-nodes"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Submission Modal -->
+  <div id="reportModal" class="fixed inset-0 z-40 bg-black/70 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="glass-panel w-full max-w-lg rounded-3xl p-6 sm:p-7 relative border border-flagRed/30 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+      
+      <button id="closeReportModalBtn" class="absolute top-5 right-5 text-slate-400 hover:text-white p-2">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="mb-5">
+        <h3 class="text-lg font-extrabold text-white flex items-center gap-2">
+          <i class="fa-solid fa-bullhorn text-flagRed"></i> 로맨스 스캠 의심 사례 제보
+        </h3>
+        <p class="text-xs text-slate-400 mt-1">
+          타인의 실명, 전화번호, 사진 등 개인정보는 기재할 수 없으며, 가상 별칭과 행동 패턴 위주로 작성 바랍니다.
+        </p>
+      </div>
+
+      <form id="reportForm" class="space-y-4">
+        <!-- Alias -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">
+            의심 인물 별칭 (특징 요약) <span class="text-flagRed">*</span>
+          </label>
+          <input 
+            type="text" 
+            id="formAlias" 
+            required 
+            placeholder="예: 싱가포르 골프장 사업가 데이비드, 강남 코인 전문가 J" 
+            class="w-full bg-black/40 border border-slate-700 focus:border-flagRed rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+          />
+        </div>
+
+        <!-- City & Country selection -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">
+              활동 도시 / 지역 <span class="text-flagRed">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="formCity" 
+              required 
+              placeholder="예: 서울 강남, 도쿄, 뉴욕" 
+              class="w-full bg-black/40 border border-slate-700 focus:border-flagRed rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">
+              국가 프리셋 좌표 매핑 <span class="text-flagRed">*</span>
+            </label>
+            <select 
+              id="formCountryPreset" 
+              class="w-full bg-black/50 border border-slate-700 focus:border-flagRed rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none"
+            >
+              <option value="37.5665,126.9780">대한민국 (서울)</option>
+              <option value="35.6762,139.6503">일본 (도쿄)</option>
+              <option value="40.7128,-74.0060">미국 (뉴욕)</option>
+              <option value="51.5074,-0.1278">영국 (런던)</option>
+              <option value="1.3521,103.8198">싱가포르</option>
+              <option value="13.7563,100.5018">태국 (방콕)</option>
+              <option value="22.3193,114.1694">홍콩</option>
+              <option value="48.8566,2.3522">프랑스 (파리)</option>
+              <option value="-33.8688,151.2093">호주 (시드니)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Apps & Claimed Occupation -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">접촉한 데이팅 앱</label>
+            <input 
+              type="text" 
+              id="formApps" 
+              placeholder="예: Tinder, Bumble, 틴더" 
+              class="w-full bg-black/40 border border-slate-700 focus:border-flagRed rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">사칭한 직업 / 신분</label>
+            <input 
+              type="text" 
+              id="formJob" 
+              placeholder="예: 파생상품 트레이더, 군의관" 
+              class="w-full bg-black/40 border border-slate-700 focus:border-flagRed rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <!-- Modus Operandi -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">
+            접근 수법 및 의심 행동 설명 <span class="text-flagRed">*</span>
+          </label>
+          <textarea 
+            id="formModus" 
+            required 
+            rows="3" 
+            placeholder="예: 초반에 과도한 호감을 표한 후 가짜 암호화폐 투자 사이트 URL을 공유하며 수익 입금을 유도함. 영상 통화 요구 시 카메라 고장을 핑계로 지속 회피." 
+            class="w-full bg-black/40 border border-slate-700 focus:border-flagRed rounded-xl p-3 text-xs text-white focus:outline-none leading-relaxed"
+          ></textarea>
+        </div>
+
+        <div class="pt-2">
+          <button 
+            type="submit" 
+            class="w-full bg-flagRed hover:bg-flagRedHover text-white font-bold py-3 rounded-xl transition duration-200 text-xs shadow-lg shadow-flagRed/30 flex items-center justify-center gap-2"
+          >
+            <i class="fa-solid fa-paper-plane"></i>
+            <span>지구본에 즉시 경보 핀 등록하기</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notification -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-panel px-4 py-2.5 rounded-full text-xs font-semibold text-white flex items-center gap-2 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <i class="fa-solid fa-circle-check text-emerald-400"></i>
+    <span id="toastMsg">알림 메시지</span>
+  </div>
+
+  <script>
+    // Initial Dataset: Scam alert reports around the world
+    const scamAlerts = [
+      {
+        id: 'flag-1',
+        lat: 37.5665,
+        lng: 126.9780,
+        city: '대한민국 서울 (강남/서초)',
+        alias: '홍콩계 암호화폐 트레이더 알렉스',
+        apps: 'Tinder, Instagram DM',
+        claimedJob: '해외 자산운용사 외환/코인 퀀트 매니저',
+        modus: '친밀감을 형성한 후 자신이 수익을 낸 가짜 가상자산 거래소(DEX) 화면 캡처를 보내며 소액 투자를 유도함. 출금 시 세금 명목으로 추가 입금을 요구하는 전형적 도살형(Pig Butchering) 수법.',
+        patterns: ['가짜 가상자산 거래소', '영상통화 거부', '해외 자산가 사칭', '출금 보증금 요구'],
+        risk: '매우 높음',
+        upvotes: 42
+      },
+      {
+        id: 'flag-2',
+        lat: 35.6762,
+        lng: 139.6503,
+        city: '일본 도쿄 (신주쿠/시부야)',
+        alias: '파리 유학파 패션 바이어 켄지',
+        apps: 'Bumble, Pairs',
+        claimedJob: '유럽 명품 브랜드 수입 에이전트',
+        modus: '명품 라이프스타일 사진을 보여주며 접근. 한국/일본 여행 일정을 핑계로 선물 배송 통관비가 묶였다며 대납을 요청하거나 통관 대행 사이트 결제를 유도함.',
+        patterns: ['통관비 대납 요구', '고가 선물 미끼', '일방적 일정 변경'],
+        risk: '높음',
+        upvotes: 19
+      },
+      {
+        id: 'flag-3',
+        lat: 40.7128,
+        lng: -74.0060,
+        city: '미국 뉴욕 (맨해튼)',
+        alias: '월가 출신 사모펀드 매니저 제임스',
+        apps: 'Hinge, LinkedIn',
+        claimedJob: '헤지펀드 시니어 파트너',
+        modus: '비즈니스 프로필로 신뢰를 얻은 후 긴급 자금 회전 혹은 비밀 내부 거래 기회를 언급하며 탈중앙화 지갑 주소로 테더(USDT) 송금을 종용함.',
+        patterns: ['USDT 전송 요구', '내부 정보 미끼', '링크드인 연계 사칭'],
+        risk: '매우 높음',
+        upvotes: 31
+      },
+      {
+        id: 'flag-4',
+        lat: 51.5074,
+        lng: -0.1278,
+        city: '영국 런던 (메이페어)',
+        alias: '우크라이나 파병 UN 군의관 닥터 마이클',
+        apps: 'Tinder, Facebook Dating',
+        claimedJob: 'UN 평화유지군 파견 외과의사',
+        modus: '퇴역 후 한국에 정착해 함께 살자며 연애 감정을 고조시킴. 소지품과 연금을 담은 외교 행낭을 한국으로 보내기 위한 수수료를 한국 지인 명의 계좌로 입금해달라고 애원.',
+        patterns: ['외교 행낭 사기', '군인/의사 사칭', '감정적 가스라이팅'],
+        risk: '높음',
+        upvotes: 27
+      },
+      {
+        id: 'flag-5',
+        lat: 1.3521,
+        lng: 103.8198,
+        city: '싱가포르',
+        alias: '싱가포르 뷰티 클리닉 대표 클로이',
+        apps: 'Coffee Meets Bagel, 위챗',
+        claimedJob: '프리미엄 에스테틱 체인 CEO',
+        modus: '골프와 와인 취미를 공유하며 유대 형성. 삼촌이 금융감독원 고위직이라며 조작된 금 거래 선물 시스템 계정을 주며 대신 베팅해달라고 조작된 수익 화면을 각인시킴.',
+        patterns: ['금 선물거래 유도', '친척 고위직 사칭', '대리 베팅 유혹'],
+        risk: '주의',
+        upvotes: 14
+      },
+      {
+        id: 'flag-6',
+        lat: 13.7563,
+        lng: 100.5018,
+        city: '태국 방콕 (수쿰빗)',
+        alias: '동남아 리조트 디벨로퍼 데이비드',
+        apps: 'Tinder',
+        claimedJob: '카지노 & 복합리조트 개발자',
+        modus: '현지 호텔 사진과 비즈니스 미팅 사진을 정기적으로 올림. 해외 카지노 환전 칩 차익거래를 통해 무위험 차익을 얻을 수 있다며 해외 송금을 종용.',
+        patterns: ['환전 차익 사기', '해외 부동산 미끼', '차명계좌 유도'],
+        risk: '높음',
+        upvotes: 22
+      }
+    ];
+
+    let currentSelectedAlert = null;
+    let globeInstance = null;
+    let activeFilterQuery = '';
+
+    // Initialize Globe.gl
+    function initGlobe() {
+      const container = document.getElementById('globeViz');
+
+      globeInstance = Globe()(container)
+        .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
+        .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+        .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+        .showAtmosphere(true)
+        .atmosphereColor('#ff2d55')
+        .atmosphereAltitude(0.2)
+        
+        // Custom 3D Glowing Rings around markers (Radio.garden style pulse)
+        .ringsData(scamAlerts)
+        .ringLat(d => d.lat)
+        .ringLng(d => d.lng)
+        .ringColor(() => (t => `rgba(255, 45, 85, ${1 - t})`))
+        .ringMaxRadius(4.5)
+        .ringPropagationSpeed(1.6)
+        .ringRepeatPeriod(900)
+
+        // Custom HTML Elements for interactive pins
+        .htmlElementsData(scamAlerts)
+        .htmlLat(d => d.lat)
+        .htmlLng(d => d.lng)
+        .htmlElement(d => {
+          const el = document.createElement('div');
+          el.className = 'group cursor-pointer transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center';
+          el.innerHTML = `
+            <div class="relative flex items-center justify-center">
+              <span class="animate-ping absolute inline-flex h-7 w-7 rounded-full bg-flagRed opacity-60"></span>
+              <div class="w-4 h-4 rounded-full bg-flagRed border-2 border-white shadow-lg pulse-marker group-hover:scale-125 transition-transform"></div>
+              <div class="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-6 pointer-events-none whitespace-nowrap bg-black/90 text-white text-[11px] font-bold px-2.5 py-1 rounded-md border border-flagRed/40 shadow-xl">
+                ⚠️ ${d.alias} (${d.upvotes}명 공감)
+              </div>
+            </div>
+          `;
+          el.onclick = () => selectAlert(d);
+          return el;
+        });
+
+      // Auto-rotation controls
+      globeInstance.controls().autoRotate = true;
+      globeInstance.controls().autoRotateSpeed = 0.45;
+      globeInstance.controls().enableDamping = true;
+
+      // Adjust camera initial view to Asia-Pacific
+      globeInstance.pointOfView({ lat: 28, lng: 125, altitude: 2.2 }, 1500);
+
+      // Handle Window Resize
+      window.addEventListener('resize', () => {
+        globeInstance.width(window.innerWidth);
+        globeInstance.height(window.innerHeight);
+      });
+
+      updateStatsUI();
+      renderMiniList();
+    }
+
+    // Select and focus on an alert
+    function selectAlert(alertData) {
+      currentSelectedAlert = alertData;
+
+      // Stop auto rotate temporarily and focus camera on marker
+      globeInstance.controls().autoRotate = false;
+      globeInstance.pointOfView({
+        lat: alertData.lat,
+        lng: alertData.lng,
+        altitude: 1.2
+      }, 1200);
+
+      // Fill Drawer UI
+      document.getElementById('drawerAlias').textContent = alertData.alias;
+      document.getElementById('drawerCityCountry').innerHTML = `<i class="fa-solid fa-location-dot text-flagRed"></i> <span>${alertData.city}</span>`;
+      document.getElementById('drawerApps').textContent = alertData.apps || '정보 없음';
+      document.getElementById('drawerJob').textContent = alertData.claimedJob || '미상';
+      document.getElementById('drawerDesc').textContent = alertData.modus;
+      document.getElementById('upvoteCountBadge').textContent = alertData.upvotes;
+
+      // Risk Tag
+      const riskEl = document.getElementById('drawerRiskBadge');
+      riskEl.textContent = `위험도: ${alertData.risk || '높음'}`;
+
+      // Pattern tags
+      const patternContainer = document.getElementById('drawerPatternTags');
+      patternContainer.innerHTML = '';
+      (alertData.patterns || ['로맨스 스캠 의심']).forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded text-slate-300';
+        span.textContent = `# ${tag}`;
+        patternContainer.appendChild(span);
+      });
+
+      // Open Drawer
+      document.getElementById('profileDrawer').classList.remove('translate-x-full');
+    }
+
+    // Close Drawer
+    function closeDrawer() {
+      document.getElementById('profileDrawer').classList.add('translate-x-full');
+      globeInstance.controls().autoRotate = true;
+    }
+
+    // Upvote Button logic (Upvoting same suspected scammer)
+    document.getElementById('upvoteBtn').addEventListener('click', () => {
+      if (!currentSelectedAlert) return;
+      currentSelectedAlert.upvotes += 1;
+      document.getElementById('upvoteCountBadge').textContent = currentSelectedAlert.upvotes;
+      
+      // Update data and refresh markers
+      refreshGlobeMarkers();
+      renderMiniList();
+      showToast(`'${currentSelectedAlert.alias}' 프로필에 공감이 반영되었습니다.`);
+    });
+
+    // Share button
+    document.getElementById('shareBtn').addEventListener('click', () => {
+      if (!currentSelectedAlert) return;
+      const textToCopy = `[Red Flag 로맨스 스캠 주의보]\n별칭: ${currentSelectedAlert.alias}\n지역: ${currentSelectedAlert.city}\n앱: ${currentSelectedAlert.apps}\n수법: ${currentSelectedAlert.modus}`;
+      
+      const textArea = document.createElement('textarea');
+      textArea.value = textToCopy;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('의심 프로필 내용이 클립보드에 복사되었습니다.');
+      } catch (err) {
+        showToast('복사에 실패했습니다.');
+      }
+      document.body.removeChild(textArea);
+    });
+
+    // Toast message handler
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 2600);
+    }
+
+    // Refresh Globe markers after add or filter
+    function refreshGlobeMarkers() {
+      const filtered = scamAlerts.filter(item => {
+        if (!activeFilterQuery) return true;
+        const q = activeFilterQuery.toLowerCase();
+        return item.alias.toLowerCase().includes(q) || 
+               item.city.toLowerCase().includes(q) || 
+               item.apps.toLowerCase().includes(q) ||
+               item.modus.toLowerCase().includes(q);
+      });
+
+      globeInstance.htmlElementsData(filtered);
+      globeInstance.ringsData(filtered);
+      document.getElementById('totalAlertsCount').textContent = `${filtered.length}건`;
+    }
+
+    // Mini List in left sidebar
+    function renderMiniList() {
+      const container = document.getElementById('miniAlertsList');
+      container.innerHTML = '';
+      
+      scamAlerts.slice(0, 5).forEach(alert => {
+        const item = document.createElement('div');
+        item.className = 'p-2 rounded-xl bg-black/40 hover:bg-flagRed/10 border border-white/5 hover:border-flagRed/30 cursor-pointer transition text-left';
+        item.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-200 truncate w-36">${alert.alias}</span>
+            <span class="text-[10px] text-flagRed font-bold"><i class="fa-solid fa-heart-pulse"></i> ${alert.upvotes}</span>
+          </div>
+          <p class="text-[10px] text-slate-400 truncate mt-0.5">${alert.city}</p>
+        `;
+        item.onclick = () => selectAlert(alert);
+        container.appendChild(item);
+      });
+    }
+
+    function updateStatsUI() {
+      document.getElementById('totalAlertsCount').textContent = `${scamAlerts.length}건`;
+    }
+
+    // Report Modal Handlers
+    const reportModal = document.getElementById('reportModal');
+    document.getElementById('openReportModalBtn').addEventListener('click', () => {
+      reportModal.classList.remove('hidden');
+      reportModal.classList.add('flex');
+    });
+
+    document.getElementById('closeReportModalBtn').addEventListener('click', () => {
+      reportModal.classList.add('hidden');
+      reportModal.classList.remove('flex');
+    });
+
+    document.getElementById('closeDrawerBtn').addEventListener('click', closeDrawer);
+
+    // Reset View Button
+    document.getElementById('resetViewBtn').addEventListener('click', () => {
+      globeInstance.pointOfView({ lat: 25, lng: 120, altitude: 2.2 }, 1200);
+      globeInstance.controls().autoRotate = true;
+    });
+
+    // Form Submission: Submit New Report
+    document.getElementById('reportForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const alias = document.getElementById('formAlias').value.trim();
+      const city = document.getElementById('formCity').value.trim();
+      const apps = document.getElementById('formApps').value.trim() || '미상';
+      const claimedJob = document.getElementById('formJob').value.trim() || '비공개';
+      const modus = document.getElementById('formModus').value.trim();
+      const presetCoord = document.getElementById('formCountryPreset').value.split(',');
+
+      // Small jitter so markers in the same city don't completely overlap
+      const jitterLat = (Math.random() - 0.5) * 0.4;
+      const jitterLng = (Math.random() - 0.5) * 0.4;
+
+      const newAlert = {
+        id: `flag-${Date.now()}`,
+        lat: parseFloat(presetCoord[0]) + jitterLat,
+        lng: parseFloat(presetCoord[1]) + jitterLng,
+        city: city,
+        alias: alias,
+        apps: apps,
+        claimedJob: claimedJob,
+        modus: modus,
+        patterns: ['신규 제보', '교차 검증 중'],
+        risk: '주의',
+        upvotes: 1
+      };
+
+      // Push to in-memory database
+      scamAlerts.unshift(newAlert);
+
+      // Refresh UI & Globe
+      refreshGlobeMarkers();
+      renderMiniList();
+      updateStatsUI();
+
+      // Close modal and focus on new pin
+      reportModal.classList.add('hidden');
+      reportModal.classList.remove('flex');
+      document.getElementById('reportForm').reset();
+
+      showToast(`'${alias}' 제보가 성공적으로 등록되었습니다.`);
+      selectAlert(newAlert);
+    });
+
+    // Search and Filtering
+    const searchInput = document.getElementById('searchInput');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+
+    searchInput.addEventListener('input', (e) => {
+      activeFilterQuery = e.target.value.trim();
+      if (activeFilterQuery) {
+        clearSearchBtn.classList.remove('hidden');
+      } else {
+        clearSearchBtn.classList.add('hidden');
+      }
+      refreshGlobeMarkers();
+    });
+
+    clearSearchBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      activeFilterQuery = '';
+      clearSearchBtn.classList.add('hidden');
+      refreshGlobeMarkers();
+    });
+
+    // Initialize application on window load
+    window.onload = function() {
+      initGlobe();
+    };
+  </script>
+</body>
+</html>
